@@ -13,7 +13,8 @@ interface DayData {
   carryForward: number
 }
 
-const STORAGE_KEY_PREFIX = "milk_shop_"
+const STORAGE_VERSION = "v1"
+const STORAGE_KEY_PREFIX = `milk_shop_${STORAGE_VERSION}_`
 
 export function getCurrentDateString(): string {
   const today = new Date()
@@ -27,7 +28,7 @@ export function getPreviousDateString(dateString: string): string {
 }
 
 export async function getDayData(
-  dateString: string,
+  dateString: string
 ): Promise<{ records: MilkRecord[]; totalPaid: number; carryForward: number }> {
   try {
     const response = await fetch(`/api/records?date=${encodeURIComponent(dateString)}`, {
@@ -37,21 +38,17 @@ export async function getDayData(
 
     if (!response.ok) {
       console.error("[TEJA] API response not ok:", response.status, response.statusText)
-      // Fallback to localStorage
       const cached = localStorage.getItem(`${STORAGE_KEY_PREFIX}${dateString}`)
-      if (cached) {
-        return JSON.parse(cached)
-      }
+      if (cached) return JSON.parse(cached)
       throw new Error(`Failed to fetch: ${response.status}`)
     }
 
     const data = await response.json()
-    // Cache in localStorage as backup
+    // Cache locally for offline use
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${dateString}`, JSON.stringify(data))
     return data
   } catch (error) {
     console.error("[v0] Error fetching day data:", error)
-    // Try localStorage as fallback
     const cached = localStorage.getItem(`${STORAGE_KEY_PREFIX}${dateString}`)
     if (cached) {
       console.log("[v0] Using cached data from localStorage")
@@ -61,11 +58,16 @@ export async function getDayData(
   }
 }
 
-export async function saveDayData(dateString: string, records: MilkRecord[], totalPaid = 0): Promise<void> {
-  const dataToSave = { date: dateString, records, totalPaid }
+export async function saveDayData(
+  dateString: string,
+  records: MilkRecord[],
+  totalPaid = 0,
+  carryForward = 0
+): Promise<void> {
+  const dataToSave = { date: dateString, records, totalPaid, carryForward }
 
   try {
-    // Always cache in localStorage first
+    // Save offline first
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${dateString}`, JSON.stringify(dataToSave))
 
     const response = await fetch("/api/records", {
@@ -80,7 +82,7 @@ export async function saveDayData(dateString: string, records: MilkRecord[], tot
       return
     }
 
-    console.log("[v0] Data saved successfully to API and localStorage")
+    console.log("[v0] ✅ Data saved to API & localStorage")
   } catch (error) {
     console.error("[v0] Error saving day data:", error)
     console.log("[v0] Data saved to localStorage as backup")

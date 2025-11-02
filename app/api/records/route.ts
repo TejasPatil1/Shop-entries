@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server"
+import { put, list } from "@vercel/blob"
 
-const JSONBIN_URL = `https://api.jsonbin.io/v3/b/6906dd1b80b27952c6e764c2`
-const HEADERS = {
-  "Content-Type": "application/json",
-  "X-Master-Key": process.env.JSONBIN_KEY!,
+interface MilkRecord {
+  id: string
+  type: string
+  quantity: number
+  rate: number
+  total: number
+}
+
+interface DayData {
+  date: string
+  records: MilkRecord[]
+  totalPaid: number
+  carryForward: number
 }
 
 function getPreviousDateString(dateString: string): string {
@@ -12,85 +22,85 @@ function getPreviousDateString(dateString: string): string {
   return date.toISOString().split("T")[0]
 }
 
-// Fetch all records
-async function getAllData() {
-  const res = await fetch(JSONBIN_URL, { headers: HEADERS })
-  const json = await res.json()
-  return json.record || {}
+async function getDayDataFromBlob(date: string): Promise<DayData | null> {
+  try {
+    const filename = `milk_records/${date}.json`
+    const { blobs } = await list({ prefix: "milk_records/" })
+    const file = blobs.find((b) => b.pathname === filename)
+    if (!file) return null
+
+    const res = await fetch(file.url)
+    if (!res.ok) return null
+    return await res.json()
+  } catch (err) {
+    console.error("[TEJA] Error fetching from blob:", err)
+    return null
+  }
 }
 
-// Save all records
-async function saveAllData(data: any) {
-  await fetch(JSONBIN_URL, {
-    method: "PUT",
-    headers: HEADERS,
-    body: JSON.stringify(data),
+async function saveDayDataToBlob(data: DayData): Promise<void> {
+  const filename = `milk_records/${data.date}.json`
+  await put(filename, JSON.stringify(data, null, 2), {
+    access: "public",
+    contentType: "application/json",
   })
 }
 
-export async function GET(request: Request) {
+// ---- GET route ----
+export async function GET(request: Request): Promise<NextResponse> {
   try {
     const url = new URL(request.url)
     const date = url.searchParams.get("date")
-    const allData = await getAllData()
-
     if (!date) {
       return NextResponse.json({ records: [], totalPaid: 0, carryForward: 0 })
     }
 
-    const dayData = allData[date]
+    // Get today's data
+    const dayData = await getDayDataFromBlob(date)
+    if (dayData) return NextResponse.json(dayData)
 
-    if (!dayData) {
-      const prevDate = getPreviousDateString(date)
-      const prevData = allData[prevDate]
+    // Otherwise check previous day for carry forward
+    const previousDate = getPreviousDateString(date)
+    const previousData = await getDayDataFromBlob(previousDate)
 
-      let carryForward = 0
-      if (prevData) {
-        const prevTotal = prevData.records.reduce((s: number, r: any) => s + r.total, 0)
-        const prevPaid = prevData.totalPaid || 0
-        carryForward = prevTotal - prevPaid
-      }
-
-      return NextResponse.json({ records: [], totalPaid: 0, carryForward })
+    let carryForward = 0
+    if (previousData) {
+      const previousTotal = previousData.records.reduce((sum, r) => sum + r.total, 0)
+      const previousPaid = previousData.totalPaid || 0
+      carryForward = previousTotal - previousPaid
     }
 
-    return NextResponse.json(dayData)
+    return NextResponse.json({ records: [], totalPaid: 0, carryForward })
   } catch (error) {
     console.error("[TEJA] Error in GET:", error)
     return NextResponse.json({ records: [], totalPaid: 0, carryForward: 0 }, { status: 200 })
   }
 }
 
-export async function POST(request: Request) {
+// ---- POST route ----
+export async function POST(request: Request): Promise<NextResponse> {
   try {
     const { date, records, totalPaid } = await request.json()
-
     if (!date) {
-      return NextResponse.json({ error: "Date required" }, { status: 400 })
+      return NextResponse.json({ error: "Date is required" }, { status: 400 })
     }
 
-    const allData = await getAllData()
-    const prevDate = getPreviousDateString(date)
-    const prevData = allData[prevDate]
+    const previousDate = getPreviousDateString(date)
+    const previousData = await getDayDataFromBlob(previousDate)
 
     let carryForward = 0
-    if (prevData) {
-      const prevTotal = prevData.records.reduce((s: number, r: any) => s + r.total, 0)
-      const prevPaid = prevData.totalPaid || 0
-      carryForward = prevTotal - prevPaid
+    if (previousData) {
+      const previousTotal = previousData.records.reduce((sum, r) => sum + r.total, 0)
+      const previousPaid = previousData.totalPaid || 0
+      carryForward = previousTotal - previousPaid
     }
 
-    allData[date] = {
-      date,
-      records,
-      totalPaid,
-      carryForward,
-    }
+    const dayData: DayData = { date, records, totalPaid, carryForward }
 
-    await saveAllData(allData)
+    await saveDayDataToBlob(dayData)
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[TEJA] Error in POST:", error)
-    return NextResponse.json({ error: "Failed to save data" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to save" }, { status: 500 })
   }
 }
