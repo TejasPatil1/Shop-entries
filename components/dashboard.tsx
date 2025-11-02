@@ -19,10 +19,10 @@ export function Dashboard({ onAddRecord }: { onAddRecord: () => void }) {
       setLoading(true)
       try {
         const data = await getDayData(selectedDate)
-        console.log("[v0] Loaded data for", selectedDate, data)
+        console.log("[TEJA] Loaded data for", selectedDate, data)
         setDayData(data)
       } catch (error) {
-        console.error("[v0] Failed to load data:", error)
+        console.error("[TEJA] Failed to load data:", error)
         setDayData({ records: [], totalPaid: 0, carryForward: 0 })
       } finally {
         setLoading(false)

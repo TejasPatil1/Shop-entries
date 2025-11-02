@@ -83,7 +83,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(dayData)
   } catch (error) {
-    console.error("[v0] Error in GET:", error)
+    console.error("[TEJA] Error in GET:", error)
     return NextResponse.json(
       { records: [], totalPaid: 0, carryForward: 0 },
       { status: 200 }, // Return 200 to avoid client errors
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await saveAllData(allData)
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("[v0] Error in POST:", error)
+    console.error("[TEJA] Error in POST:", error)
     return NextResponse.json({ error: "Failed to save" }, { status: 500 })
   }
 }

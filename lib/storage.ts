@@ -36,7 +36,7 @@ export async function getDayData(
     })
 
     if (!response.ok) {
-      console.error("[v0] API response not ok:", response.status, response.statusText)
+      console.error("[TEJA] API response not ok:", response.status, response.statusText)
       // Fallback to localStorage
       const cached = localStorage.getItem(`${STORAGE_KEY_PREFIX}${dateString}`)
       if (cached) {
