@@ -1,51 +1,9 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { promises as fs } from "fs"
-import path from "path"
+import { NextResponse } from "next/server"
 
-interface MilkRecord {
-  id: string
-  type: string
-  quantity: number
-  rate: number
-  total: number
-}
-
-interface DayData {
-  date: string
-  records: MilkRecord[]
-  totalPaid: number
-  carryForward: number
-}
-
-interface StorageData {
-  [key: string]: DayData
-}
-
-const DATA_FILE = path.join(process.cwd(), "data", "records.json")
-
-async function ensureDataFile(): Promise<void> {
-  try {
-    await fs.access(DATA_FILE)
-  } catch {
-    const dir = path.dirname(DATA_FILE)
-    await fs.mkdir(dir, { recursive: true })
-    await fs.writeFile(DATA_FILE, JSON.stringify({}, null, 2))
-  }
-}
-
-async function getAllData(): Promise<StorageData> {
-  await ensureDataFile()
-  try {
-    const content = await fs.readFile(DATA_FILE, "utf-8")
-    return JSON.parse(content)
-  } catch {
-    return {}
-  }
-}
-
-async function saveAllData(data: StorageData): Promise<void> {
-  await ensureDataFile()
-  await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2))
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/6906dd1b80b27952c6e764c2`
+const HEADERS = {
+  "Content-Type": "application/json",
+  "X-Master-Key": process.env.JSONBIN_KEY!,
 }
 
 function getPreviousDateString(dateString: string): string {
@@ -54,28 +12,43 @@ function getPreviousDateString(dateString: string): string {
   return date.toISOString().split("T")[0]
 }
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+// Fetch all records
+async function getAllData() {
+  const res = await fetch(JSONBIN_URL, { headers: HEADERS })
+  const json = await res.json()
+  return json.record || {}
+}
+
+// Save all records
+async function saveAllData(data: any) {
+  await fetch(JSONBIN_URL, {
+    method: "PUT",
+    headers: HEADERS,
+    body: JSON.stringify(data),
+  })
+}
+
+export async function GET(request: Request) {
   try {
-    const date = request.nextUrl.searchParams.get("date")
+    const url = new URL(request.url)
+    const date = url.searchParams.get("date")
+    const allData = await getAllData()
 
     if (!date) {
       return NextResponse.json({ records: [], totalPaid: 0, carryForward: 0 })
     }
 
-    const allData = await getAllData()
     const dayData = allData[date]
 
-    // If no data for today, calculate carry forward from yesterday
     if (!dayData) {
-      const previousDate = getPreviousDateString(date)
-      const previousData = allData[previousDate]
+      const prevDate = getPreviousDateString(date)
+      const prevData = allData[prevDate]
 
       let carryForward = 0
-      if (previousData) {
-        const previousTotal = previousData.records.reduce((sum, r) => sum + r.total, 0)
-        const previousPaid = previousData.totalPaid || 0
-        const previousRemaining = previousTotal - previousPaid
-        carryForward = previousRemaining
+      if (prevData) {
+        const prevTotal = prevData.records.reduce((s: number, r: any) => s + r.total, 0)
+        const prevPaid = prevData.totalPaid || 0
+        carryForward = prevTotal - prevPaid
       }
 
       return NextResponse.json({ records: [], totalPaid: 0, carryForward })
@@ -84,34 +57,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(dayData)
   } catch (error) {
     console.error("[TEJA] Error in GET:", error)
-    return NextResponse.json(
-      { records: [], totalPaid: 0, carryForward: 0 },
-      { status: 200 }, // Return 200 to avoid client errors
-    )
+    return NextResponse.json({ records: [], totalPaid: 0, carryForward: 0 }, { status: 200 })
   }
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const { date, records, totalPaid } = body
+    const { date, records, totalPaid } = await request.json()
 
     if (!date) {
-      return NextResponse.json({ error: "Date is required" }, { status: 400 })
+      return NextResponse.json({ error: "Date required" }, { status: 400 })
     }
 
     const allData = await getAllData()
-
-    // Calculate carry forward
-    const previousDate = getPreviousDateString(date)
-    const previousData = allData[previousDate]
+    const prevDate = getPreviousDateString(date)
+    const prevData = allData[prevDate]
 
     let carryForward = 0
-    if (previousData) {
-      const previousTotal = previousData.records.reduce((sum, r) => sum + r.total, 0)
-      const previousPaid = previousData.totalPaid || 0
-      const previousRemaining = previousTotal - previousPaid
-      carryForward = previousRemaining
+    if (prevData) {
+      const prevTotal = prevData.records.reduce((s: number, r: any) => s + r.total, 0)
+      const prevPaid = prevData.totalPaid || 0
+      carryForward = prevTotal - prevPaid
     }
 
     allData[date] = {
@@ -125,6 +91,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[TEJA] Error in POST:", error)
-    return NextResponse.json({ error: "Failed to save" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to save data" }, { status: 500 })
   }
 }
