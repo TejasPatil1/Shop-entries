@@ -16,21 +16,23 @@ const MILK_PRODUCTS = [
   { id: 5, name: "Chhas (500ml)", type: "Chhas" },
 ]
 
-export function AddRecord({ onBack }: { onBack: () => void }) {
-  const selectedDate = getCurrentDateString()
+// ✅ Accept date from parent (this fixes previous-day saving)
+export function AddRecord({ onBack, date }: { onBack: () => void; date?: string }) {
+  const [selectedDate, setSelectedDate] = useState(date || getCurrentDateString())
+
   const [records, setRecords] = useState<Record<string, { quantity: number; rate: number }>>(
     MILK_PRODUCTS.reduce(
       (acc, product) => {
         acc[product.type] = { quantity: 0, rate: 0 }
         return acc
       },
-      {} as Record<string, { quantity: number; rate: number }>,
-    ),
+      {} as Record<string, { quantity: number; rate: number }>
+    )
   )
+
   const [loading, setLoading] = useState(false)
 
   const handleSave = async () => {
-    // Convert records to milk record format
     const recordsArray = MILK_PRODUCTS.filter((product) => records[product.type].quantity > 0).map((product) => {
       const r = records[product.type]
       return {
@@ -42,12 +44,10 @@ export function AddRecord({ onBack }: { onBack: () => void }) {
       }
     })
 
-    // Save to storage
     setLoading(true)
     await saveDayData(selectedDate, recordsArray)
     setLoading(false)
 
-    // Redirect back
     onBack()
   }
 
@@ -65,8 +65,19 @@ export function AddRecord({ onBack }: { onBack: () => void }) {
             <ChevronLeft className="w-5 h-5" />
             <span className="text-sm font-medium">Back</span>
           </button>
+
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Add Records</h1>
-          <p className="text-xs sm:text-sm text-slate-600 mt-1">{formatDate(selectedDate)}</p>
+
+          {/* 🟢 Allow selecting date manually (optional) */}
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="border border-slate-300 rounded-md px-2 py-1 text-sm text-slate-700"
+            />
+            <p className="text-xs sm:text-sm text-slate-600">{formatDate(selectedDate)}</p>
+          </div>
         </div>
       </div>
 
@@ -86,7 +97,7 @@ export function AddRecord({ onBack }: { onBack: () => void }) {
           />
         ))}
 
-        {/* Summary while adding */}
+        {/* Summary */}
         {hasAnyRecord && (
           <Card className="p-4 bg-slate-50 border border-slate-200 sticky top-24 sm:top-20">
             <h3 className="font-semibold text-slate-700 mb-3 text-sm sm:text-base">Preview Summary</h3>
@@ -95,7 +106,6 @@ export function AddRecord({ onBack }: { onBack: () => void }) {
                 const r = records[product.type]
                 if (r.quantity === 0) return null
                 const total = r.quantity * r.rate
-
                 return (
                   <div
                     key={product.id}
@@ -123,7 +133,7 @@ export function AddRecord({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* Save Button - Fixed at Bottom */}
+      {/* Save Button */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 sm:p-4 shadow-lg">
         <div className="max-w-2xl mx-auto flex gap-3">
           <Button
